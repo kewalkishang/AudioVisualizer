@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  <meta charset='UTF-8'>
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <title>THREE.JS - Audio Visualizer</title>
+  <style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    background: #000;
+  }
+  .startbut{
+      position: absolute;
+      left: 44%;
+      top: 50%;
+  color: black;
+  border: 2px solid #ffffff; 
+  background-color: #4CAF50; /* Green */
+  border: none;
+  color: white;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  border-radius: 12px;
+  }
+  </style>
+  </head>
+  <body>
+      <button id="start" onclick="startExp()" class="startbut"> Start AudioVisualizer</button>
+  <script src="three.min.js"></script>
+
+  <script type='x-shader/x-vertex' id='vertexshader'>
+    attribute float alpha;
+    varying float vAlpha;
+
+    void main() {
+      vAlpha = alpha;
+      vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+      gl_PointSize = 3.0;
+      gl_Position = projectionMatrix * mvPosition;
+    }
+
+  </script>
+
+  <script type='x-shader/x-fragment' id='fragmentshader'>
+    uniform vec3 color;
+    varying float vAlpha;
+
+    void main() {
+      gl_FragColor = vec4( color, vAlpha );
+    }
+  </script>
+
+  <script>
+    var renderer, scene, camera, pointcloud, uniforms, box;
+  var radius = 70;
+    var shaderMaterial;
+
+    function startExp(){
+    init();
+    animate();
+    document.getElementById('start').style.visibility = 'hidden';
+    }
+
+    function init() {
+      // renderer
+      const fftSize = 32;
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize( window.innerWidth, window.innerHeight );
+      document.body.appendChild( renderer.domElement );
+      
+      // scene
+      scene = new THREE.Scene();
+
+      //camera
+      camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 1000 );
+      camera.position.z = 400;
+
+      const light = new THREE.PointLight( 0xffffff, 1, 100 );
+		light.position.set( 0, 10, 0 );
+		light.castShadow = true; // default false
+		scene.add( light );
+
+        
+
+        //SETUP AUDIO
+        const listener = new THREE.AudioListener();
+
+const audio = new THREE.Audio( listener );
+const file = './bang.mp3';
+
+if ( /(iPad|iPhone|iPod)/g.test( navigator.userAgent ) ) {
+
+    const loader = new THREE.AudioLoader();
+    loader.load( file, function ( buffer ) {
+
+        audio.setBuffer( buffer );
+        audio.play();
+
+    } );
+
+} else {
+
+    const mediaElement = new Audio( file );
+    mediaElement.play();
+
+    audio.setMediaElementSource( mediaElement );
+
+}
+
+analyser = new THREE.AudioAnalyser( audio, fftSize );
+
+//
+
+const format = ( renderer.capabilities.isWebGL2 ) ? THREE.RedFormat : THREE.LuminanceFormat;
+
+ 
+
+      // pointcloud geometry
+     geometry = new THREE.SphereBufferGeometry( radius, 32, 32 );
+   
+      // add an attribute
+      numVertices = geometry.attributes.position.count;
+      console.log("NumVerticles "+ numVertices );
+      var alphas = new Float32Array( numVertices ); // 1 values per vertex
+
+      for( var i = 0; i < numVertices; i ++ ) {
+        // set alpha randomly
+        alphas[ i ] = 1;
+      }
+     
+      geometry.setAttribute( 'alpha', new THREE.BufferAttribute( alphas, 1 ) );
+      
+      // uniforms
+      uniforms = {
+        color: { value: new THREE.Color( 0xff0000 ) },
+      
+      };
+
+      // point cloud material
+      shaderMaterial = new THREE.ShaderMaterial( {
+        uniforms:     uniforms,
+        vertexShader:   document.getElementById( 'vertexshader' ).textContent,
+        fragmentShader: document.getElementById( 'fragmentshader' ).textContent,
+        transparent:  true
+
+      });
+
+      // point cloud
+      pointcloud = new THREE.Points( geometry, shaderMaterial );
+      scene.add( pointcloud );
+      window.addEventListener( 'resize', onResize, false );
+    }
+
+    function animate() {
+      requestAnimationFrame( animate );
+      render();
+    }
+
+
+    function onResize() {
+
+renderer.setSize( window.innerWidth, window.innerHeight );
+
+}
+
+
+    function render() {
+
+    
+       var avgfre = analyser.getAverageFrequency();
+      // console.log("freq" + avgfre);
+    
+
+var r , g, b;
+
+var col = colorGradient(avgfre/255, new THREE.Color( 0xff0000 ), new THREE.Color( 0x00ff00 ), new THREE.Color( 0x0000ff ));
+shaderMaterial.uniforms.color.value = new THREE.Color(col);
+
+     //Rotate point cloud
+      pointcloud.rotation.x += 0.005;
+      pointcloud.rotation.y += 0.005;
+      
+      // Scale point cloud according to frequency
+       pointcloud.scale.x =   1 +  (avgfre/255);
+       pointcloud.scale.y =  1 +  (avgfre/255);
+       pointcloud.scale.z =  1 +  (avgfre/255);
+
+
+      renderer.render( scene, camera );
+
+    }
+
+
+
+  function colorGradient(fadeFraction, rgbColor1, rgbColor2, rgbColor3) {
+    var color1 = rgbColor1;
+    var color2 = rgbColor2;
+    var fade = fadeFraction;
+  //console.log("ocloe "+ color1.r);
+    // Do we have 3 colors for the gradient? Need to adjust the params.
+    if (rgbColor3) {
+      fade = fade * 2;
+    //    console.log("Fade "+ fade);
+      // Find which interval to use and adjust the fade percentage
+      if (fade >= 1) {
+        fade -= 1;
+        color1 = rgbColor2;
+        color2 = rgbColor3;
+      }
+    }
+
+    var diffRed = color2.r - color1.r;
+    var diffGreen = color2.g - color1.g;
+    var diffBlue = color2.b - color1.b;
+  //  console.log("diff "+ diffRed + " : " +  diffGreen + " : "+  diffBlue + " : "+fade);
+    var gradient = {
+      red: Math.floor((color1.r + (diffRed * fade))*100)+"%",
+      green: Math.floor((color1.g + (diffGreen * fade))*100)+"%",
+      blue: Math.floor((color1.b + (diffBlue * fade))*100)+"%",
+    };
+    //console.log('rgb(' + gradient.red + ',' + gradient.green + ',' + gradient.blue + ')')
+    return 'rgb(' + gradient.red + ',' + gradient.green + ',' + gradient.blue + ')';
+  }
+
+  </script>
+
+  </body>
+</html>
